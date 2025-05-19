@@ -3,7 +3,55 @@ library(sudokuAlt)
 library(gridExtra)
 library(grid)
 
-# Define UI
+draw_sudoku <- function(mat, bold_every = sqrt(nrow(mat))) {
+  size <- nrow(mat)
+  
+  grid.newpage()
+  
+  # Set up viewport
+  pushViewport(viewport(layout = grid.layout(size, size)))
+  
+  for (i in 1:size) {
+    for (j in 1:size) {
+      val <- mat[i, j]
+      
+      # Draw cell background
+      grid.rect(x = (j - 0.5)/size, y = 1 - (i - 0.5)/size,
+                width = 1/size, height = 1/size,
+                gp = gpar(fill = "white", col = "black", lwd = 0.5))
+      
+      # Draw number or emoji
+      if (val != "") {
+        grid.text(label = val,
+                  x = (j - 0.5)/size,
+                  y = 1 - (i - 0.5)/size,
+                  gp = gpar(cex = 2))
+      }
+    }
+  }
+  
+  # Draw bold borders
+  for (k in 0:size) {
+    lwd_h <- if (k %% bold_every == 0) 2 else 0.5
+    lwd_v <- lwd_h
+    
+    # horizontal lines
+    grid.lines(x = c(0, 1), y = rep(1 - k / size, 2),
+               gp = gpar(lwd = lwd_h))
+    
+    # vertical lines
+    grid.lines(y = c(0, 1), x = rep(k / size, 2),
+               gp = gpar(lwd = lwd_v))
+  }
+  
+  popViewport()
+}
+
+
+
+
+
+# UI
 ui <- fluidPage(
   titlePanel("Printable Sudoku Generator"),
   sidebarLayout(
@@ -14,6 +62,7 @@ ui <- fluidPage(
                                  "16x16 (n = 4)" = 4)),
       selectInput("difficulty", "Difficulty:",
                   choices = c("Easy", "Medium", "Hard", "Expert")),
+      checkboxInput("use_fruit", "Use Fruit Symbols (only for 4x4)", FALSE),
       actionButton("generate", "Generate Puzzle"),
       downloadButton("download_pdf", "Download as PDF")
     ),
@@ -23,10 +72,11 @@ ui <- fluidPage(
   )
 )
 
-# Define Server
+# Server
 server <- function(input, output, session) {
   
-  # Safe gaps by size and difficulty
+  fruit_map <- c("1" = "🍐", "2" = "🍎", "3" = "🍋", "4" = "🍑")
+  
   get_gaps <- function(n, difficulty) {
     size <- n^2
     total_cells <- size^2
@@ -59,19 +109,28 @@ server <- function(input, output, session) {
     })
   })
   
+  format_grid <- function(game, use_fruit) {
+    size <- sqrt(length(game))
+    mat <- matrix(game, nrow = size, byrow = TRUE)
+    mat[is.na(mat)] <- ""
+    
+    if (use_fruit && size == 4) {
+      mat <- apply(mat, c(1,2), function(x) {
+        if (x == "") return("")
+        fruit_map[as.character(x)]
+      })
+    }
+    
+    mat
+  }
+  
   output$sudoku_plot <- renderPlot({
     game <- puzzle_data()
     if (is.null(game)) return()
     
-    size <- sqrt(length(game))
-    mat <- matrix(game, nrow = size, byrow = TRUE)
-    
-    # Replace NAs with empty strings
-    mat[is.na(mat)] <- ""
-    
-    grid.table(mat, rows = NULL, cols = NULL)
+    mat <- format_grid(game, input$use_fruit)
+    draw_sudoku(mat)
   })
-  
   
   output$download_pdf <- downloadHandler(
     filename = function() {
@@ -81,18 +140,14 @@ server <- function(input, output, session) {
       pdf(file, width = 7, height = 7)
       game <- puzzle_data()
       if (!is.null(game)) {
-        size <- sqrt(length(game))
-        mat <- matrix(game, nrow = size, byrow = TRUE)
-        
-        # Replace NAs with empty strings for PDF too
-        mat[is.na(mat)] <- ""
-        
-        grid.table(mat, rows = NULL, cols = NULL)
+        mat <- format_grid(game, input$use_fruit)
+        draw_sudoku(mat)
       }
       dev.off()
     }
   )
   
+
 }
 
 shinyApp(ui, server)
